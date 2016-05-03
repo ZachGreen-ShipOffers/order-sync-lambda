@@ -1,24 +1,33 @@
 var unirest = require('unirest');
-var config = require('./config');
+var moment = require('moment-timezone');
 
-
-var ShipStationSyncOrders = function(key, secret) {
+var ShipStation = function(key, secret) {
   this.baseUrl = 'https://ssapi.shipstation.com'
-  this.key = key
-  this.secret = secret
-  const b = new Buffer(config.ss_api_key + ':' + config.ss_api_secret);
+  const b = new Buffer(key + ':' + secret);
   this.headers = {
     "Authorization": "Basic " + b.toString('base64'),
     "Content-Type": "application/json"
   }
+
+  this.orderParams = {
+    "modifyDateEnd": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
+    "modifyDateStart": moment().tz('America/Denver').subtract(2, 'hours').format('YYYY-MM-DD HH:mm:ss'),
+    "pageSize": 500
+  }
+  this.shipmentParams = {
+    "shipDateEnd": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
+    "shipDateStart": moment().tz('America/Denver').subtract(2, 'hours').format('YYYY-MM-DD HH:mm:ss'),
+    "includeShipmentItems": true,
+    "pageSize": 500
+  }
 }
 
-ShipStationSyncOrders.prototype.buildUrl = function(path, params) {
+ShipStation.prototype.buildUrl = function(path, params) {
   var p = this.baseUrl + path + '?' + this.toQuery(params)
   this.fullURL = p
 }
 
-ShipStationSyncOrders.prototype.toQuery = function(params) {
+ShipStation.prototype.toQuery = function(params) {
   var a = []
   for (var p in params) {
     a.push(p + '=' + params[p])
@@ -26,17 +35,23 @@ ShipStationSyncOrders.prototype.toQuery = function(params) {
   return a.join('&');
 }
 
-ShipStationSyncOrders.prototype.getOrders = function(page) {
-  if (page == 0) {
-    var url = this.fullURL
-  } else {
-    var url = this.fullURL + "&page=" + page
+ShipStation.prototype.getOrders = function(page) {
+  var url = this.baseUrl + '/orders?' + this.toQuery(this.orderParams)
+  if (page && page > 0) {
+    url = url + "&page=" + page
   }
-  // console.log("Calling " + this.fullURL);
   return unirest.get(url, this.headers)
 }
 
-ShipStationSyncOrders.prototype.formatItems = function(id, items) {
+ShipStation.prototype.getShipments = function(page) {
+  var url = this.baseUrl + '/shipments?' + this.toQuery(this.shipmentParams)
+  if (page && page > 0) {
+    url = url + "&page=" + page
+  }
+  return unirest.get(url, this.headers)
+}
+
+ShipStation.prototype.formatOrderItems = function(id, items) {
   s = []
   for (var i = 0; i < items.length; i++) {
     var other = {}
@@ -72,7 +87,7 @@ ShipStationSyncOrders.prototype.formatItems = function(id, items) {
   return s;
 }
 
-ShipStationSyncOrders.prototype.serializeForPg = function(orders) {
+ShipStation.prototype.serializeOrdersForPg = function(orders) {
   var o = []
   for (var i = 0; i < orders.length; i++) {
     o.push({
@@ -106,13 +121,88 @@ ShipStationSyncOrders.prototype.serializeForPg = function(orders) {
       custom_field3: orders[i].advancedOptions.customField3,
       parent_id: orders[i].advancedOptions.parentId,
       merged_or_split: orders[i].advancedOptions.mergedOrSplit,
-      items: this.formatItems(orders[i].orderId, orders[i].items)
+      items: this.formatOrderItems(orders[i].orderId, orders[i].items)
     })
   }
   return o;
 }
 
+ShipStation.prototype.serializeShipmentsForPg = function(shipments) {
+  var o = []
+  for (var i = 0; i < shipments.length; i++) {
+    o.push({
+      id: shipments[i].shipmentId,
+      ship_station_order_id: shipments[i].orderId,
+      ship_station_store_id: shipments[i].advancedOptions.storeId,
+      order_number: shipments[i].orderNumber,
+      tracking_number: shipments[i].trackingNumber,
+      batch_number: shipments[i].batchNumber,
+      confirmation: shipments[i].confirmation,
+      email: shipments[i].customerEmail,
+      carrier_code: shipments[i].carrierCode,
+      service_code: shipments[i].serviceCode,
+      package_code: shipments[i].packageCode,
+      return_label: shipments[i].isReturnLabel,
+      voided: shipments[i].voided,
+      void_date: shipments[i].voidDate,
+      name: shipments[i].shipTo.name,
+      company: shipments[i].shipTo.company,
+      street1: shipments[i].shipTo.street1,
+      street2: shipments[i].shipTo.street2,
+      street3: shipments[i].shipTo.street3,
+      city: shipments[i].shipTo.city,
+      state: shipments[i].shipTo.state,
+      postal_code: shipments[i].shipTo.postalCode,
+      country: shipments[i].shipTo.country,
+      phone: shipments[i].shipTo.phone,
+      ship_date: shipments[i].shipDate,
+      shipment_cost: shipments[i].shipmentCost,
+      insurance_cost: shipments[i].insuranceCost,
+      items: this.formatShipmentItems(shipments[i].shipmentId, shipments[i].orderId, shipments[i].shipmentItems)
+    })
+  }
+  return o;
+}
+
+ShipStation.prototype.formatShipmentItems = function(id, orderId, items) {
+  s = []
+  for (var i = 0; i < items.length; i++) {
+    var other = {}
+    other['ship_station_shipment_id'] = id
+    other['ship_station_order_id'] = orderId
+    other['order_item_id'] = items[i].orderItemId
+    other['line_item_key'] = items[i].lineItemKey
+    other['sku'] = items[i].sku
+    other['name'] = items[i].name
+    other['image_url'] = items[i].imageUrl
+
+    if (items[i].weight == null) {
+      other['weight_value'] = null
+      other['weight_unit'] = null
+    } else {
+      other['weight_value'] = items[i].weight.value
+      other['weight_unit'] = items[i].weight.unit
+    }
+
+    other['quantity'] = items[i].quantity
+    other['unit_price'] = items[i].unitPrice
+    other['tax_amount'] = items[i].taxAmount
+    other['shipping_amount'] = items[i].shippingAmount
+    other['warehouse_location'] = items[i].warehouseLocation
+    other['options'] = items[i].options
+    other['product_id'] = items[i].productId
+    other['fulfillment_sku'] = items[i].fulfillmentSku
+    other['adjustment'] = items[i].adjustment
+    other['upc'] = items[i].upc
+    other['create_date'] = items[i].createDate
+    other['modify_date'] = items[i].modifyDate
+    s.push(other)
+  }
+  return s;
+}
 
 
 
-module.exports = ShipStationSyncOrders
+
+
+module.exports = ShipStation

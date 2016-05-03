@@ -1,42 +1,63 @@
 var config = require('./config');
-var pg = require('./db');
-var ShipStationSyncOrders = require('./orders');
-var moment = require('moment-timezone');
-var db = pg.db;
-var pgp = pg.pgp;
-var sss = new ShipStationSyncOrders(config.ss_api_key, config.ss_api_secret);
+var ShipStation = require('./orders');
+var sss = new ShipStation(config.ss_api_key, config.ss_api_secret);
 var AWS = require('aws-sdk');
 AWS.config.loadFromPath('./aws_config.json');
-
 var lambda = new AWS.Lambda();
 
 exports.handler = function(event, context) {
-
-
-  var params = {
-    "modifyDateEnd": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
-    "modifyDateStart": moment().tz('America/Denver').subtract(2, 'hours').format('YYYY-MM-DD HH:mm:ss'),
-    "pageSize": 500
-  }
-
-  sss.buildUrl('/orders', params);
+  /*
+  add properties to event
+  params: startDate/endDate
+  */
   console.log("Running...");
-  sss.getOrders(0)
-  .end(function(res) {
-    var pages = res.body.pages
-    for (var i = 1; i < (pages + 1); i++) {
-      sss.getOrders(i)
-      .end(function(pagesResponse) {
-        var orders = sss.serializeForPg(res.body.orders)
-        orders = JSON.stringify({orders: orders})
-        if (orders.length == 0) {
-          console.log(res.body);
-          context.done("Zero Orders")
+
+  switch (event.type) {
+    case 'orders':
+      console.log('Doing Orders');
+      sss.getOrders()
+      .end(function(res) {
+        var pages = res.body.pages
+        for (var i = 1; i < (pages + 1); i++) {
+          sss.getOrders(i)
+          .end(function(pagesResponse) {
+            var orders = sss.serializeOrdersForPg(res.body.orders)
+            if (orders.length == 0) {
+              console.log(res.body);
+              context.done("Zero Orders")
+            }
+            orders = JSON.stringify({type: 'orders', orders: orders})
+            lambda.invoke({FunctionName: 'OrdersToDB', Payload: orders}, function(err, data) {
+              if (err) { context.fail(err);}
+              console.log("Sending Page " + i + " of Orders to OrdersToDB Lambda");
+            });
+          });
         }
-        lambda.invoke({FunctionName: 'OrdersToDB', Payload: orders}, function(err, data) {
-          if (err) { context.fail(err);}
-        });
       });
-    }
-  });
+      break;
+    case 'shipments':
+    console.log('Doing Shipments');
+      sss.getShipments()
+      .end(function(res) {
+        var pages = res.body.pages
+        for (var i = 1; i < (pages + 1); i++) {
+          sss.getShipments(i)
+          .end(function(pagesResponse) {
+            var shipments = sss.serializeShipmentsForPg(res.body.shipments)
+            if (shipments.length == 0) {
+              console.log(res.body);
+              context.done("Zero Shipments")
+            }
+            shipments = JSON.stringify({type: 'shipments', shipments: shipments})
+            lambda.invoke({FunctionName: 'OrdersToDB', Payload: shipments}, function(err, data) {
+              if (err) { context.fail(err);}
+              console.log("Sending Page " + i + " of Shipments to OrdersToDB Lambda");
+            });
+          });
+        }
+      });
+      break;
+    default:
+      context.done("Don't Know What To Do")
+  }
 };
