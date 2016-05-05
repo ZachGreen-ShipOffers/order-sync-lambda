@@ -10,13 +10,13 @@ var ShipStation = function(key, secret) {
   }
 
   this.orderParams = {
-    "modifyDateEnd": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
-    "modifyDateStart": moment().tz('America/Denver').subtract(2, 'hours').format('YYYY-MM-DD HH:mm:ss'),
+    "modifyDateEnd": moment().tz('America/Denver').add(2, 'h').add(15, 'm').format('YYYY-MM-DD HH:mm:ss'),
+    "modifyDateStart": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
     "pageSize": 500
   }
   this.shipmentParams = {
-    "shipDateEnd": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
-    "shipDateStart": moment().tz('America/Denver').subtract(2, 'hours').format('YYYY-MM-DD HH:mm:ss'),
+    "shipDateEnd": moment().tz('America/Denver').add(2, 'h').add(15, 'm').format('YYYY-MM-DD HH:mm:ss'),
+    "shipDateStart": moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss'),
     "includeShipmentItems": true,
     "pageSize": 500
   }
