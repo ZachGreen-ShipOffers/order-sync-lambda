@@ -23,8 +23,8 @@ exports.handler = function(event, context) {
           .end(function(pagesResponse) {
             var orders = sss.serializeOrdersForPg(res.body.orders)
             if (orders.length == 0) {
-              console.log(res.body);
               context.done("Zero Orders")
+              return
             }
             orders = JSON.stringify({type: 'orders', orders: orders})
             lambda.invoke({FunctionName: 'OrdersToDB', Payload: orders}, function(err, data) {
@@ -45,8 +45,8 @@ exports.handler = function(event, context) {
           .end(function(pagesResponse) {
             var shipments = sss.serializeShipmentsForPg(res.body.shipments)
             if (shipments.length == 0) {
-              console.log(res.body);
               context.done("Zero Shipments")
+              return
             }
             shipments = JSON.stringify({type: 'shipments', shipments: shipments})
             lambda.invoke({FunctionName: 'OrdersToDB', Payload: shipments}, function(err, data) {
